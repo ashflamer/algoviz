@@ -1,0 +1,16 @@
+{
+  "name": "algoviz",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Interactive pathfinding visualiser: A*, Dijkstra, BFS, DFS, greedy best-first. One HTML file, zero dependencies.",
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "test": "node --test test/",
+    "serve": "node --watch-path=./src -e \"\" || true",
+    "start": "npm run build && python3 -m http.server 8080"
+  },
+  "keywords": ["algorithms", "pathfinding", "astar", "dijkstra", "visualization", "canvas", "zero-dependency"],
+  "license": "MIT",
+  "author": "ashflamer"
+}

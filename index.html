@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>algoviz — pathfinding visualiser</title>
+<meta name="description" content="Watch A*, Dijkstra, BFS, DFS and greedy best-first search explore a grid. Zero dependencies, single HTML file.">
+<style>
+  :root {
+    --bg:#070b12; --panel:#0f1521; --line:#1f2a3d; --text:#e8eefc; --dim:#8b9bb8;
+    --accent:#4da3ff; --start:#3fd47f; --end:#ff5d6c; --path:#ffd54a; --wall:#46536b;
+    --weight:#6b4b1f;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; padding:2rem 1.25rem 3rem; }
+  header { display:flex; flex-wrap:wrap; align-items:baseline; gap:.75rem; margin-bottom:.35rem; }
+  h1 { font-size:1.5rem; margin:0; letter-spacing:-.02em; }
+  h1 span { color:var(--accent); }
+  .tag { color:var(--dim); font-size:.9rem; }
+  .hint { color:var(--dim); font-size:.86rem; margin:0 0 1.25rem; }
+  kbd { background:var(--panel); border:1px solid var(--line); border-bottom-width:2px;
+    border-radius:4px; padding:.05rem .35rem; font:inherit; font-size:.8em; color:var(--text); }
+
+  .controls { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; margin-bottom:1rem; }
+  select, button { font:inherit; border-radius:8px; border:1px solid var(--line);
+    background:var(--panel); color:var(--text); padding:.5rem .8rem; cursor:pointer;
+    transition:border-color .15s, background .15s, transform .05s; }
+  select:hover, button:hover { border-color:var(--accent); }
+  button:active { transform:translateY(1px); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#04101f;
+    font-weight:650; }
+  button.primary:hover { background:#6fb6ff; }
+  button:disabled { opacity:.55; cursor:not-allowed; }
+  .spacer { flex:1 1 auto; }
+  label.field { display:flex; align-items:center; gap:.4rem; color:var(--dim); font-size:.85rem; }
+
+  .board-wrap { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:.6rem; overflow:hidden; }
+  canvas { display:block; margin:0 auto; border-radius:6px; touch-action:none;
+    cursor:crosshair; }
+
+  .note { color:var(--dim); font-size:.85rem; min-height:1.4em; margin:.8rem 0 0; }
+
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+    gap:.7rem; margin-top:1rem; }
+  .stat { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:.75rem .9rem; }
+  .stat .k { color:var(--dim); font-size:.68rem; text-transform:uppercase;
+    letter-spacing:.09em; }
+  .stat .v { font-size:1.35rem; font-weight:700; margin-top:.2rem;
+    font-variant-numeric:tabular-nums; }
+
+  .legend { display:flex; flex-wrap:wrap; gap:1rem; margin-top:1.1rem; color:var(--dim);
+    font-size:.83rem; }
+  .legend i { display:inline-block; width:12px; height:12px; border-radius:3px;
+    margin-right:.4rem; vertical-align:-1px; }
+
+  footer { color:var(--dim); font-size:.82rem; margin-top:2rem; border-top:1px solid var(--line);
+    padding-top:1rem; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <header>
+    <h1>algo<span>viz</span></h1>
+    <span class="tag">pathfinding, visualised</span>
+  </header>
+  <p class="hint">
+    Drag on the grid to draw walls · <kbd>Shift</kbd>+drag for weighted cells ·
+    drag the green and red squares to move start and goal ·
+    <kbd>Enter</kbd> to run, <kbd>M</kbd> for a maze, <kbd>C</kbd> to clear.
+  </p>
+
+  <div class="controls">
+    <label class="field">Algorithm <select id="algo"></select></label>
+    <label class="field">Speed
+      <select id="speed">
+        <option value="slow">Slow</option>
+        <option value="normal" selected>Normal</option>
+        <option value="fast">Fast</option>
+        <option value="instant">Instant</option>
+      </select>
+    </label>
+    <button id="run" class="primary">Visualise</button>
+    <div class="spacer"></div>
+    <button id="maze">Maze</button>
+    <button id="scatter">Scatter</button>
+    <button id="weights">Weights</button>
+    <button id="clear">Clear</button>
+  </div>
+
+  <div class="board-wrap"><canvas id="board"></canvas></div>
+  <p class="note" id="note"></p>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Cells explored</div><div class="v" id="stat-visited">0</div></div>
+    <div class="stat"><div class="k">Path length</div><div class="v" id="stat-length">0</div></div>
+    <div class="stat"><div class="k">Path cost</div><div class="v" id="stat-cost">0</div></div>
+    <div class="stat"><div class="k">Solve time</div><div class="v" id="stat-time">0 ms</div></div>
+  </div>
+
+  <div class="legend">
+    <span><i style="background:var(--start)"></i>Start</span>
+    <span><i style="background:var(--end)"></i>Goal</span>
+    <span><i style="background:var(--wall)"></i>Wall</span>
+    <span><i style="background:var(--weight)"></i>Weighted (cost 10)</span>
+    <span><i style="background:#1b4b7a"></i>Explored early</span>
+    <span><i style="background:#5b2a86"></i>Explored late</span>
+    <span><i style="background:var(--path)"></i>Shortest path</span>
+  </div>
+
+  <footer>
+    Try the same maze with <strong>A*</strong> and then <strong>Dijkstra</strong> — identical
+    paths, but watch how many fewer cells A* has to explore. Then try
+    <strong>Greedy</strong>: fastest of all, and often wrong.
+    <br>Built by <a href="https://github.com/ashflamer/algoviz">ashflamer</a> · MIT
+  </footer>
+</div>
+
+<script>
+'use strict';
+(function () {
+// ---- src/grid.js ----
+const CELL = {
+  EMPTY: 0,
+  WALL: 1,
+  WEIGHT: 2,
+};
+
+/** Cost of entering a cell. Weighted cells model mud, traffic, stairs... */
+const WEIGHT_COST = 10;
+
+function createGrid(cols, rows) {
+  return {
+    cols,
+    rows,
+    cells: new Uint8Array(cols * rows),
+    start: { x: Math.floor(cols * 0.15), y: Math.floor(rows / 2) },
+    end: { x: Math.floor(cols * 0.85), y: Math.floor(rows / 2) },
+  };
+}
+
+const index = (grid, x, y) => y * grid.cols + x;
+
+const inBounds = (grid, x, y) =>
+  x >= 0 && y >= 0 && x < grid.cols && y < grid.rows;
+
+const get = (grid, x, y) => grid.cells[index(grid, x, y)];
+
+function set(grid, x, y, value) {
+  if (!inBounds(grid, x, y)) return;
+  if (isTerminal(grid, x, y)) return; // never bury start/end
+  grid.cells[index(grid, x, y)] = value;
+}
+
+const isWall = (grid, x, y) => get(grid, x, y) === CELL.WALL;
+
+const costOf = (grid, x, y) =>
+  get(grid, x, y) === CELL.WEIGHT ? WEIGHT_COST : 1;
+
+const isTerminal = (grid, x, y) =>
+  (grid.start.x === x && grid.start.y === y) ||
+  (grid.end.x === x && grid.end.y === y);
+
+function clearWalls(grid) {
+  grid.cells.fill(CELL.EMPTY);
+}
+
+/** 4-directional neighbours, walls excluded. */
+function neighbours(grid, x, y) {
+  const out = [];
+  if (y > 0 && !isWall(grid, x, y - 1)) out.push({ x, y: y - 1 });
+  if (x < grid.cols - 1 && !isWall(grid, x + 1, y)) out.push({ x: x + 1, y });
+  if (y < grid.rows - 1 && !isWall(grid, x, y + 1)) out.push({ x, y: y + 1 });
+  if (x > 0 && !isWall(grid, x - 1, y)) out.push({ x: x - 1, y });
+  return out;
+}
+
+// ---- src/priority-queue.js ----
+/**
+ * Binary min-heap. A sorted array would make Dijkstra O(n^2 log n); this keeps
+ * push/pop at O(log n), which is the difference between a smooth 100x50 grid
+ * and a visibly stuttering one.
+ */
+class PriorityQueue {
+  #heap = [];
+
+  get size() {
+    return this.#heap.length;
+  }
+
+  push(value, priority) {
+    this.#heap.push({ value, priority });
+    this.#bubbleUp(this.#heap.length - 1);
+  }
+
+  pop() {
+    if (this.#heap.length === 0) return undefined;
+    const top = this.#heap[0];
+    const last = this.#heap.pop();
+    if (this.#heap.length > 0) {
+      this.#heap[0] = last;
+      this.#sinkDown(0);
+    }
+    return top.value;
+  }
+
+  #bubbleUp(i) {
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (this.#heap[i].priority >= this.#heap[parent].priority) break;
+      this.#swap(i, parent);
+      i = parent;
+    }
+  }
+
+  #sinkDown(i) {
+    const n = this.#heap.length;
+    for (;;) {
+      const left = 2 * i + 1;
+      const right = left + 1;
+      let smallest = i;
+      if (left < n && this.#heap[left].priority < this.#heap[smallest].priority) smallest = left;
+      if (right < n && this.#heap[right].priority < this.#heap[smallest].priority) smallest = right;
+      if (smallest === i) break;
+      this.#swap(i, smallest);
+      i = smallest;
+    }
+  }
+
+  #swap(a, b) {
+    [this.#heap[a], this.#heap[b]] = [this.#heap[b], this.#heap[a]];
+  }
+}
+
+// ---- src/algorithms.js ----
+/**
+ * Every algorithm returns the same shape so the UI can animate any of them
+ * identically:
+ *   visited - cells in the order they were expanded (drives the animation)
+ *   path    - the final route, start to end, or [] when unreachable
+ *   cost    - total weighted cost of that route
+ */
+
+function reconstruct(cameFrom, grid, end) {
+  const path = [];
+  let current = index(grid, end.x, end.y);
+  if (cameFrom.get(current) === undefined && !(current === cameFrom.startIndex)) {
+    return path;
+  }
+  while (current !== undefined) {
+    path.push({ x: current % grid.cols, y: Math.floor(current / grid.cols) });
+    current = cameFrom.get(current);
+  }
+  return path.reverse();
+}
+
+const manhattan = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+
+const euclidean = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+/** Breadth-first search: ignores weights, guarantees fewest *steps*. */
+function bfs(grid) {
+  const { start, end } = grid;
+  const startIdx = index(grid, start.x, start.y);
+  const endIdx = index(grid, end.x, end.y);
+
+  const queue = [start];
+  const cameFrom = new Map();
+  cameFrom.startIndex = startIdx;
+  const seen = new Set([startIdx]);
+  const visited = [];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const currentIdx = index(grid, current.x, current.y);
+    visited.push(current);
+
+    if (currentIdx === endIdx) break;
+
+    for (const next of neighbours(grid, current.x, current.y)) {
+      const nextIdx = index(grid, next.x, next.y);
+      if (seen.has(nextIdx)) continue;
+      seen.add(nextIdx);
+      cameFrom.set(nextIdx, currentIdx);
+      queue.push(next);
+    }
+  }
+
+  const path = seen.has(endIdx) ? reconstruct(cameFrom, grid, end) : [];
+  return { visited, path, cost: pathCost(grid, path) };
+}
+
+/** Depth-first search: finds *a* path, almost never a good one. Shown for contrast. */
+function dfs(grid) {
+  const { start, end } = grid;
+  const startIdx = index(grid, start.x, start.y);
+  const endIdx = index(grid, end.x, end.y);
+
+  const stack = [start];
+  const cameFrom = new Map();
+  cameFrom.startIndex = startIdx;
+  const seen = new Set();
+  const visited = [];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    const currentIdx = index(grid, current.x, current.y);
+    if (seen.has(currentIdx)) continue;
+    seen.add(currentIdx);
+    visited.push(current);
+
+    if (currentIdx === endIdx) break;
+
+    for (const next of neighbours(grid, current.x, current.y)) {
+      const nextIdx = index(grid, next.x, next.y);
+      if (seen.has(nextIdx)) continue;
+      if (!cameFrom.has(nextIdx)) cameFrom.set(nextIdx, currentIdx);
+      stack.push(next);
+    }
+  }
+
+  const path = seen.has(endIdx) ? reconstruct(cameFrom, grid, end) : [];
+  return { visited, path, cost: pathCost(grid, path) };
+}
+
+/** Dijkstra: cheapest path when cells have different costs. */
+function dijkstra(grid) {
+  const { start, end } = grid;
+  const startIdx = index(grid, start.x, start.y);
+  const endIdx = index(grid, end.x, end.y);
+
+  const dist = new Map([[startIdx, 0]]);
+  const cameFrom = new Map();
+  cameFrom.startIndex = startIdx;
+  const settled = new Set();
+  const visited = [];
+
+  const queue = new PriorityQueue();
+  queue.push(start, 0);
+
+  while (queue.size > 0) {
+    const current = queue.pop();
+    const currentIdx = index(grid, current.x, current.y);
+    if (settled.has(currentIdx)) continue;
+    settled.add(currentIdx);
+    visited.push(current);
+
+    if (currentIdx === endIdx) break;
+
+    for (const next of neighbours(grid, current.x, current.y)) {
+      const nextIdx = index(grid, next.x, next.y);
+      if (settled.has(nextIdx)) continue;
+      const tentative = dist.get(currentIdx) + costOf(grid, next.x, next.y);
+      if (tentative < (dist.get(nextIdx) ?? Infinity)) {
+        dist.set(nextIdx, tentative);
+        cameFrom.set(nextIdx, currentIdx);
+        queue.push(next, tentative);
+      }
+    }
+  }
+
+  const path = settled.has(endIdx) ? reconstruct(cameFrom, grid, end) : [];
+  return { visited, path, cost: pathCost(grid, path) };
+}
+
+/**
+ * A*: Dijkstra plus a heuristic nudge toward the goal.
+ *
+ * f(n) = g(n) + h(n). Manhattan distance is *admissible* on a 4-connected grid
+ * with min cost 1 - it never overestimates - so A* keeps Dijkstra's optimality
+ * guarantee while expanding dramatically fewer cells.
+ */
+function astar(grid, heuristic = manhattan) {
+  const { start, end } = grid;
+  const startIdx = index(grid, start.x, start.y);
+  const endIdx = index(grid, end.x, end.y);
+
+  const gScore = new Map([[startIdx, 0]]);
+  const cameFrom = new Map();
+  cameFrom.startIndex = startIdx;
+  const settled = new Set();
+  const visited = [];
+
+  const queue = new PriorityQueue();
+  queue.push(start, heuristic(start, end));
+
+  while (queue.size > 0) {
+    const current = queue.pop();
+    const currentIdx = index(grid, current.x, current.y);
+    if (settled.has(currentIdx)) continue;
+    settled.add(currentIdx);
+    visited.push(current);
+
+    if (currentIdx === endIdx) break;
+
+    for (const next of neighbours(grid, current.x, current.y)) {
+      const nextIdx = index(grid, next.x, next.y);
+      if (settled.has(nextIdx)) continue;
+      const tentative = gScore.get(currentIdx) + costOf(grid, next.x, next.y);
+      if (tentative < (gScore.get(nextIdx) ?? Infinity)) {
+        gScore.set(nextIdx, tentative);
+        cameFrom.set(nextIdx, currentIdx);
+        queue.push(next, tentative + heuristic(next, end));
+      }
+    }
+  }
+
+  const path = settled.has(endIdx) ? reconstruct(cameFrom, grid, end) : [];
+  return { visited, path, cost: pathCost(grid, path) };
+}
+
+/**
+ * Greedy best-first: follows the heuristic alone, ignoring cost so far.
+ * Very fast, frequently wrong - the perfect foil to A* in a demo.
+ */
+function greedy(grid, heuristic = manhattan) {
+  const { start, end } = grid;
+  const startIdx = index(grid, start.x, start.y);
+  const endIdx = index(grid, end.x, end.y);
+
+  const cameFrom = new Map();
+  cameFrom.startIndex = startIdx;
+  const seen = new Set([startIdx]);
+  const visited = [];
+
+  const queue = new PriorityQueue();
+  queue.push(start, heuristic(start, end));
+
+  while (queue.size > 0) {
+    const current = queue.pop();
+    const currentIdx = index(grid, current.x, current.y);
+    visited.push(current);
+
+    if (currentIdx === endIdx) break;
+
+    for (const next of neighbours(grid, current.x, current.y)) {
+      const nextIdx = index(grid, next.x, next.y);
+      if (seen.has(nextIdx)) continue;
+      seen.add(nextIdx);
+      cameFrom.set(nextIdx, currentIdx);
+      queue.push(next, heuristic(next, end));
+    }
+  }
+
+  const path = seen.has(endIdx) ? reconstruct(cameFrom, grid, end) : [];
+  return { visited, path, cost: pathCost(grid, path) };
+}
+
+function pathCost(grid, path) {
+  let total = 0;
+  for (let i = 1; i < path.length; i++) {
+    total += costOf(grid, path[i].x, path[i].y);
+  }
+  return total;
+}
+
+const ALGORITHMS = {
+  astar: { label: 'A*', fn: astar, weighted: true, optimal: true },
+  dijkstra: { label: 'Dijkstra', fn: dijkstra, weighted: true, optimal: true },
+  bfs: { label: 'BFS', fn: bfs, weighted: false, optimal: true },
+  greedy: { label: 'Greedy', fn: greedy, weighted: false, optimal: false },
+  dfs: { label: 'DFS', fn: dfs, weighted: false, optimal: false },
+};
+
+// ---- src/maze.js ----
+/** Mulberry32 - tiny seedable PRNG so mazes are reproducible in tests. */
+function rng(seed = 1) {
+  let a = seed >>> 0;
+  return function next() {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Scatter walls at random. Fast, chaotic, not always solvable. */
+function randomWalls(grid, density = 0.28, random = Math.random) {
+  clearWalls(grid);
+  for (let y = 0; y < grid.rows; y++) {
+    for (let x = 0; x < grid.cols; x++) {
+      if (random() < density) set(grid, x, y, CELL.WALL);
+    }
+  }
+}
+
+/** Scatter weighted (expensive-to-cross) cells. */
+function randomWeights(grid, density = 0.3, random = Math.random) {
+  for (let y = 0; y < grid.rows; y++) {
+    for (let x = 0; x < grid.cols; x++) {
+      if (grid.cells[y * grid.cols + x] === CELL.EMPTY && random() < density) {
+        set(grid, x, y, CELL.WEIGHT);
+      }
+    }
+  }
+}
+
+/**
+ * Recursive division: start with an empty room, split it with a wall, punch
+ * one hole in that wall, recurse into both halves. Produces clean maze
+ * corridors rather than random noise, and is always fully connected.
+ */
+function recursiveDivision(grid, random = Math.random) {
+  clearWalls(grid);
+
+  // Border.
+  for (let x = 0; x < grid.cols; x++) {
+    set(grid, x, 0, CELL.WALL);
+    set(grid, x, grid.rows - 1, CELL.WALL);
+  }
+  for (let y = 0; y < grid.rows; y++) {
+    set(grid, 0, y, CELL.WALL);
+    set(grid, grid.cols - 1, y, CELL.WALL);
+  }
+
+  divide(grid, 1, 1, grid.cols - 2, grid.rows - 2, random);
+
+  // Guarantee the endpoints are reachable.
+  for (const p of [grid.start, grid.end]) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const x = p.x + dx;
+        const y = p.y + dy;
+        if (inBounds(grid, x, y) && x > 0 && y > 0 && x < grid.cols - 1 && y < grid.rows - 1) {
+          grid.cells[y * grid.cols + x] = CELL.EMPTY;
+        }
+      }
+    }
+  }
+}
+
+function divide(grid, x, y, width, height, random) {
+  if (width < 3 || height < 3) return;
+
+  const horizontal = width === height ? random() < 0.5 : width < height;
+
+  if (horizontal) {
+    // Wall on an even row, gap on an odd column - keeps corridors open.
+    const wallY = y + 1 + 2 * Math.floor((random() * (height - 2)) / 2);
+    const gapX = x + 2 * Math.floor((random() * (width + 1)) / 2);
+    for (let i = x; i < x + width; i++) {
+      if (i !== gapX && !isTerminal(grid, i, wallY)) {
+        grid.cells[wallY * grid.cols + i] = CELL.WALL;
+      }
+    }
+    divide(grid, x, y, width, wallY - y, random);
+    divide(grid, x, wallY + 1, width, y + height - wallY - 1, random);
+  } else {
+    const wallX = x + 1 + 2 * Math.floor((random() * (width - 2)) / 2);
+    const gapY = y + 2 * Math.floor((random() * (height + 1)) / 2);
+    for (let i = y; i < y + height; i++) {
+      if (i !== gapY && !isTerminal(grid, wallX, i)) {
+        grid.cells[i * grid.cols + wallX] = CELL.WALL;
+      }
+    }
+    divide(grid, x, y, wallX - x, height, random);
+    divide(grid, wallX + 1, y, x + width - wallX - 1, height, random);
+  }
+}
+
+// ---- src/ui.js ----
+const COLORS = {
+  empty: '#0f1521',
+  grid: '#1b2334',
+  wall: '#46536b',
+  weight: '#6b4b1f',
+  visited: '#1b4b7a',
+  visitedLate: '#5b2a86',
+  path: '#ffd54a',
+  start: '#3fd47f',
+  end: '#ff5d6c',
+};
+
+const SPEEDS = { slow: 1, normal: 6, fast: 20, instant: Infinity };
+
+function mount(root) {
+  const canvas = root.querySelector('#board');
+  const ctx = canvas.getContext('2d');
+  const els = {
+    algo: root.querySelector('#algo'),
+    speed: root.querySelector('#speed'),
+    run: root.querySelector('#run'),
+    maze: root.querySelector('#maze'),
+    scatter: root.querySelector('#scatter'),
+    weights: root.querySelector('#weights'),
+    clear: root.querySelector('#clear'),
+    visited: root.querySelector('#stat-visited'),
+    length: root.querySelector('#stat-length'),
+    cost: root.querySelector('#stat-cost'),
+    time: root.querySelector('#stat-time'),
+    note: root.querySelector('#note'),
+  };
+
+  let cellSize = 22;
+  let grid = createGrid(10, 10);
+  let animation = null;
+  let drag = null;           // 'wall' | 'erase' | 'weight' | 'start' | 'end'
+  let visitedSet = null;
+  let pathSet = null;
+
+  function layout() {
+    const width = canvas.parentElement.clientWidth;
+    const height = Math.max(320, Math.min(560, Math.round(width * 0.5)));
+    cellSize = width > 900 ? 22 : width > 600 ? 18 : 14;
+
+    const cols = Math.max(10, Math.floor(width / cellSize));
+    const rows = Math.max(8, Math.floor(height / cellSize));
+
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = cols * cellSize * dpr;
+    canvas.height = rows * cellSize * dpr;
+    canvas.style.width = `${cols * cellSize}px`;
+    canvas.style.height = `${rows * cellSize}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const previous = grid;
+    grid = createGrid(cols, rows);
+    // Preserve the drawing when the window resizes.
+    if (previous.cols > 1) {
+      for (let y = 0; y < Math.min(rows, previous.rows); y++) {
+        for (let x = 0; x < Math.min(cols, previous.cols); x++) {
+          grid.cells[y * cols + x] = previous.cells[y * previous.cols + x];
+        }
+      }
+      grid.start = clamp(previous.start, cols, rows);
+      grid.end = clamp(previous.end, cols, rows);
+    }
+    reset();
+  }
+
+  const clamp = (p, cols, rows) => ({
+    x: Math.min(p.x, cols - 1),
+    y: Math.min(p.y, rows - 1),
+  });
+
+  function reset() {
+    cancelAnimation();
+    visitedSet = null;
+    pathSet = null;
+    setStats({ visited: 0, length: 0, cost: 0, time: 0 });
+    draw();
+  }
+
+  function cancelAnimation() {
+    if (animation) {
+      cancelAnimationFrame(animation);
+      animation = null;
+    }
+    els.run.disabled = false;
+    els.run.textContent = 'Visualise';
+  }
+
+  function setStats({ visited, length, cost, time }) {
+    els.visited.textContent = visited.toLocaleString();
+    els.length.textContent = length.toLocaleString();
+    els.cost.textContent = cost.toLocaleString();
+    els.time.textContent = `${time.toFixed(2)} ms`;
+  }
+
+  function draw() {
+    ctx.fillStyle = COLORS.empty;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    for (let y = 0; y < grid.rows; y++) {
+      for (let x = 0; x < grid.cols; x++) {
+        const i = y * grid.cols + x;
+        const px = x * cellSize;
+        const py = y * cellSize;
+        let fill = null;
+
+        if (grid.cells[i] === CELL.WALL) fill = COLORS.wall;
+        else if (grid.cells[i] === CELL.WEIGHT) fill = COLORS.weight;
+
+        if (visitedSet && visitedSet.has(i) && grid.cells[i] !== CELL.WALL) {
+          const t = visitedSet.get(i);
+          fill = mix(COLORS.visited, COLORS.visitedLate, t);
+        }
+        if (pathSet && pathSet.has(i)) fill = COLORS.path;
+
+        if (fill) {
+          ctx.fillStyle = fill;
+          roundRect(ctx, px + 1, py + 1, cellSize - 2, cellSize - 2, 3);
+          ctx.fill();
+        } else {
+          ctx.strokeStyle = COLORS.grid;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(px + 0.5, py + 0.5, cellSize - 1, cellSize - 1);
+        }
+      }
+    }
+
+    marker(grid.start, COLORS.start);
+    marker(grid.end, COLORS.end);
+  }
+
+  function marker(point, color) {
+    const px = point.x * cellSize;
+    const py = point.y * cellSize;
+    ctx.fillStyle = color;
+    roundRect(ctx, px + 2, py + 2, cellSize - 4, cellSize - 4, 4);
+    ctx.fill();
+  }
+
+  function run() {
+    cancelAnimation();
+    visitedSet = new Map();
+    pathSet = null;
+
+    const entry = ALGORITHMS[els.algo.value];
+    const started = performance.now();
+    const result = entry.fn(grid);
+    const elapsed = performance.now() - started;
+
+    els.note.textContent = result.path.length
+      ? `${entry.label}: ${entry.optimal ? 'optimal' : 'not guaranteed optimal'}` +
+        `${entry.weighted ? ' · respects weights' : ' · ignores weights'}`
+      : 'No path exists — the goal is walled off.';
+
+    const perFrame = SPEEDS[els.speed.value];
+    const total = result.visited.length;
+
+    if (perFrame === Infinity) {
+      result.visited.forEach((cell, i) => {
+        visitedSet.set(cell.y * grid.cols + cell.x, i / Math.max(total - 1, 1));
+      });
+      finish(result, elapsed);
+      return;
+    }
+
+    els.run.disabled = true;
+    els.run.textContent = 'Running…';
+    let i = 0;
+
+    const step = () => {
+      for (let n = 0; n < perFrame && i < total; n++, i++) {
+        const cell = result.visited[i];
+        visitedSet.set(cell.y * grid.cols + cell.x, i / Math.max(total - 1, 1));
+      }
+      draw();
+      setStats({ visited: i, length: 0, cost: 0, time: elapsed });
+
+      if (i < total) {
+        animation = requestAnimationFrame(step);
+      } else {
+        animatePath(result, elapsed);
+      }
+    };
+    animation = requestAnimationFrame(step);
+  }
+
+  function animatePath(result, elapsed) {
+    pathSet = new Set();
+    let i = 0;
+    const step = () => {
+      for (let n = 0; n < 2 && i < result.path.length; n++, i++) {
+        const cell = result.path[i];
+        pathSet.add(cell.y * grid.cols + cell.x);
+      }
+      draw();
+      if (i < result.path.length) {
+        animation = requestAnimationFrame(step);
+      } else {
+        finish(result, elapsed);
+      }
+    };
+    animation = requestAnimationFrame(step);
+  }
+
+  function finish(result, elapsed) {
+    pathSet = new Set(result.path.map((c) => c.y * grid.cols + c.x));
+    draw();
+    setStats({
+      visited: result.visited.length,
+      length: Math.max(result.path.length - 1, 0),
+      cost: pathCost(grid, result.path),
+      time: elapsed,
+    });
+    cancelAnimation();
+  }
+
+  function cellAt(event) {
+    const rect = canvas.getBoundingClientRect();
+    const source = event.touches ? event.touches[0] : event;
+    return {
+      x: Math.floor((source.clientX - rect.left) / cellSize),
+      y: Math.floor((source.clientY - rect.top) / cellSize),
+    };
+  }
+
+  function onPointerDown(event) {
+    const { x, y } = cellAt(event);
+    if (!inBounds(grid, x, y)) return;
+    event.preventDefault();
+
+    if (grid.start.x === x && grid.start.y === y) drag = 'start';
+    else if (grid.end.x === x && grid.end.y === y) drag = 'end';
+    else if (event.shiftKey) drag = 'weight';
+    else if (grid.cells[y * grid.cols + x] === CELL.WALL) drag = 'erase';
+    else drag = 'wall';
+
+    paint(x, y);
+  }
+
+  function onPointerMove(event) {
+    if (!drag) return;
+    const { x, y } = cellAt(event);
+    if (!inBounds(grid, x, y)) return;
+    event.preventDefault();
+    paint(x, y);
+  }
+
+  function paint(x, y) {
+    if (drag === 'start') {
+      if (!isTerminal(grid, x, y) && grid.cells[y * grid.cols + x] !== CELL.WALL) {
+        grid.start = { x, y };
+      }
+    } else if (drag === 'end') {
+      if (!isTerminal(grid, x, y) && grid.cells[y * grid.cols + x] !== CELL.WALL) {
+        grid.end = { x, y };
+      }
+    } else if (drag === 'weight') {
+      set(grid, x, y, CELL.WEIGHT);
+    } else if (drag === 'erase') {
+      set(grid, x, y, CELL.EMPTY);
+    } else {
+      set(grid, x, y, CELL.WALL);
+    }
+    draw();
+  }
+
+  const onPointerUp = () => { drag = null; };
+
+  canvas.addEventListener('mousedown', onPointerDown);
+  window.addEventListener('mousemove', onPointerMove);
+  window.addEventListener('mouseup', onPointerUp);
+  canvas.addEventListener('touchstart', onPointerDown, { passive: false });
+  canvas.addEventListener('touchmove', onPointerMove, { passive: false });
+  canvas.addEventListener('touchend', onPointerUp);
+
+  els.run.addEventListener('click', run);
+  els.maze.addEventListener('click', () => { recursiveDivision(grid); reset(); });
+  els.scatter.addEventListener('click', () => { randomWalls(grid, 0.28); reset(); });
+  els.weights.addEventListener('click', () => { randomWeights(grid, 0.25); reset(); });
+  els.clear.addEventListener('click', () => { clearWalls(grid); reset(); });
+  els.algo.addEventListener('change', reset);
+
+  window.addEventListener('keydown', (event) => {
+    if (event.target.tagName === 'SELECT') return;
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); run(); }
+    if (event.key.toLowerCase() === 'c') { clearWalls(grid); reset(); }
+    if (event.key.toLowerCase() === 'm') { recursiveDivision(grid); reset(); }
+  });
+
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(layout, 150);
+  });
+
+  // Populate the algorithm picker from the registry - add one entry there and
+  // it shows up here automatically.
+  els.algo.innerHTML = Object.entries(ALGORITHMS)
+    .map(([key, value]) => `<option value="${key}">${value.label}</option>`)
+    .join('');
+
+  els.weights.title = `Weighted cells cost ${WEIGHT_COST} to enter instead of 1`;
+
+  layout();
+  recursiveDivision(grid);
+  reset();
+}
+
+function mix(a, b, t) {
+  const pa = parseInt(a.slice(1), 16);
+  const pb = parseInt(b.slice(1), 16);
+  const r = Math.round((pa >> 16) + ((pb >> 16) - (pa >> 16)) * t);
+  const g = Math.round(((pa >> 8) & 255) + (((pb >> 8) & 255) - ((pa >> 8) & 255)) * t);
+  const bl = Math.round((pa & 255) + ((pb & 255) - (pa & 255)) * t);
+  return `rgb(${r},${g},${bl})`;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  mount(document.getElementById('app'));
+});
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>algoviz — pathfinding visualiser</title>
+<meta name="description" content="Watch A*, Dijkstra, BFS, DFS and greedy best-first search explore a grid. Zero dependencies, single HTML file.">
+<style>
+  :root {
+    --bg:#070b12; --panel:#0f1521; --line:#1f2a3d; --text:#e8eefc; --dim:#8b9bb8;
+    --accent:#4da3ff; --start:#3fd47f; --end:#ff5d6c; --path:#ffd54a; --wall:#46536b;
+    --weight:#6b4b1f;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; padding:2rem 1.25rem 3rem; }
+  header { display:flex; flex-wrap:wrap; align-items:baseline; gap:.75rem; margin-bottom:.35rem; }
+  h1 { font-size:1.5rem; margin:0; letter-spacing:-.02em; }
+  h1 span { color:var(--accent); }
+  .tag { color:var(--dim); font-size:.9rem; }
+  .hint { color:var(--dim); font-size:.86rem; margin:0 0 1.25rem; }
+  kbd { background:var(--panel); border:1px solid var(--line); border-bottom-width:2px;
+    border-radius:4px; padding:.05rem .35rem; font:inherit; font-size:.8em; color:var(--text); }
+
+  .controls { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; margin-bottom:1rem; }
+  select, button { font:inherit; border-radius:8px; border:1px solid var(--line);
+    background:var(--panel); color:var(--text); padding:.5rem .8rem; cursor:pointer;
+    transition:border-color .15s, background .15s, transform .05s; }
+  select:hover, button:hover { border-color:var(--accent); }
+  button:active { transform:translateY(1px); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#04101f;
+    font-weight:650; }
+  button.primary:hover { background:#6fb6ff; }
+  button:disabled { opacity:.55; cursor:not-allowed; }
+  .spacer { flex:1 1 auto; }
+  label.field { display:flex; align-items:center; gap:.4rem; color:var(--dim); font-size:.85rem; }
+
+  .board-wrap { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:.6rem; overflow:hidden; }
+  canvas { display:block; margin:0 auto; border-radius:6px; touch-action:none;
+    cursor:crosshair; }
+
+  .note { color:var(--dim); font-size:.85rem; min-height:1.4em; margin:.8rem 0 0; }
+
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+    gap:.7rem; margin-top:1rem; }
+  .stat { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:.75rem .9rem; }
+  .stat .k { color:var(--dim); font-size:.68rem; text-transform:uppercase;
+    letter-spacing:.09em; }
+  .stat .v { font-size:1.35rem; font-weight:700; margin-top:.2rem;
+    font-variant-numeric:tabular-nums; }
+
+  .legend { display:flex; flex-wrap:wrap; gap:1rem; margin-top:1.1rem; color:var(--dim);
+    font-size:.83rem; }
+  .legend i { display:inline-block; width:12px; height:12px; border-radius:3px;
+    margin-right:.4rem; vertical-align:-1px; }
+
+  footer { color:var(--dim); font-size:.82rem; margin-top:2rem; border-top:1px solid var(--line);
+    padding-top:1rem; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <header>
+    <h1>algo<span>viz</span></h1>
+    <span class="tag">pathfinding, visualised</span>
+  </header>
+  <p class="hint">
+    Drag on the grid to draw walls · <kbd>Shift</kbd>+drag for weighted cells ·
+    drag the green and red squares to move start and goal ·
+    <kbd>Enter</kbd> to run, <kbd>M</kbd> for a maze, <kbd>C</kbd> to clear.
+  </p>
+
+  <div class="controls">
+    <label class="field">Algorithm <select id="algo"></select></label>
+    <label class="field">Speed
+      <select id="speed">
+        <option value="slow">Slow</option>
+        <option value="normal" selected>Normal</option>
+        <option value="fast">Fast</option>
+        <option value="instant">Instant</option>
+      </select>
+    </label>
+    <button id="run" class="primary">Visualise</button>
+    <div class="spacer"></div>
+    <button id="maze">Maze</button>
+    <button id="scatter">Scatter</button>
+    <button id="weights">Weights</button>
+    <button id="clear">Clear</button>
+  </div>
+
+  <div class="board-wrap"><canvas id="board"></canvas></div>
+  <p class="note" id="note"></p>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Cells explored</div><div class="v" id="stat-visited">0</div></div>
+    <div class="stat"><div class="k">Path length</div><div class="v" id="stat-length">0</div></div>
+    <div class="stat"><div class="k">Path cost</div><div class="v" id="stat-cost">0</div></div>
+    <div class="stat"><div class="k">Solve time</div><div class="v" id="stat-time">0 ms</div></div>
+  </div>
+
+  <div class="legend">
+    <span><i style="background:var(--start)"></i>Start</span>
+    <span><i style="background:var(--end)"></i>Goal</span>
+    <span><i style="background:var(--wall)"></i>Wall</span>
+    <span><i style="background:var(--weight)"></i>Weighted (cost 10)</span>
+    <span><i style="background:#1b4b7a"></i>Explored early</span>
+    <span><i style="background:#5b2a86"></i>Explored late</span>
+    <span><i style="background:var(--path)"></i>Shortest path</span>
+  </div>
+
+  <footer>
+    Try the same maze with <strong>A*</strong> and then <strong>Dijkstra</strong> — identical
+    paths, but watch how many fewer cells A* has to explore. Then try
+    <strong>Greedy</strong>: fastest of all, and often wrong.
+    <br>Built by <a href="https://github.com/ashflamer/algoviz">ashflamer</a> · MIT
+  </footer>
+</div>
+
+<script>
+/*__BUNDLE__*/
+</script>
+</body>
+</html>
